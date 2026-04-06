@@ -7,14 +7,16 @@ LangGraph workflow is invoked here.
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from uvicorn import Config, Server
 
-from orchestrator.workflow import build_workflow
-from orchestrator.state import AgentState
+from .workflow import build_workflow
+from .state import AgentState
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,7 +82,6 @@ async def health():
 
 @app.get("/health/graph")
 async def graph_health():
-    """Check LangGraph graph structure."""
     if app_workflow is None:
         raise HTTPException(503, "workflow not loaded")
     return {
@@ -90,8 +91,7 @@ async def graph_health():
 
 
 @app.post("/v1/task", response_model=TaskResponse)
-async def create_task(req: TaskRequest, background: BackgroundTasks):
-    """Enqueue a task through the LangGraph workflow."""
+async def create_task(req: TaskRequest):
     if app_workflow is None:
         raise HTTPException(503, "workflow not loaded")
 
@@ -104,16 +104,19 @@ async def create_task(req: TaskRequest, background: BackgroundTasks):
         source=req.source,
     )
 
-    background_tasks = BackgroundTasks()
-
-    # Run synchronously in background (FastAPI BackgroundTasks runs after response)
     def run_graph():
         try:
-            app_workflow.invoke(dict(initial_state))
+            result = app_workflow.invoke(dict(initial_state))
+            log.info(f"[graph] task_id={task_id} confidence={result.get('confidence', 0)}")
+            return result
         except Exception as e:
             log.error(f"[graph] task_id={task_id} error: {e}")
+            return {"error": str(e)}
 
-    background_tasks.add_task(run_graph)
+    # Run in thread pool to avoid blocking
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, run_graph)
 
     return TaskResponse(
         task_id=task_id,
@@ -124,20 +127,29 @@ async def create_task(req: TaskRequest, background: BackgroundTasks):
 
 @app.post("/v1/result")
 async def receive_result(req: ResultRequest):
-    """
-    Called by Hermes after it finishes deep work.
-    Bridges the Hermes → orchestrator result path.
-    """
     log.info(f"[result] task_id={req.task_id} confidence={req.confidence}")
-    # In full implementation: write to a result store
-    # For MVP: log and acknowledge
     return {"status": "received", "task_id": req.task_id}
 
 
 @app.get("/v1/task/{task_id}")
 async def get_task(task_id: str):
-    """Check task status (MVP: returns pending)."""
     return {"task_id": task_id, "status": "processing"}
+
+
+# ---------------------------------------------------------------------------
+# Dashboard UI
+# ---------------------------------------------------------------------------
+
+DASHBOARD_HTML = Path("/tmp/dashboard.html").read_text()
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard():
+    return DASHBOARD_HTML
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_full():
+    return DASHBOARD_HTML
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +158,7 @@ async def get_task(task_id: str):
 
 def run_server():
     config = Config(
-        app="orchestrator.api:app",
+        app="orchestrator.orchestrator.api:app",
         host="127.0.0.1",
         port=18793,
         log_level="info",

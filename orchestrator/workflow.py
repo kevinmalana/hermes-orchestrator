@@ -3,8 +3,8 @@ LangGraph workflow — 6-node graph:
   ingest → classify → [END (direct) | planner → worker → critic → synthesize → send_result]
 """
 
-from orchestrator.state import AgentState
-from orchestrator.nodes import (
+from .state import AgentState
+from .nodes import (
     node_ingest,
     node_classify,
     node_planner,

@@ -1,14 +1,13 @@
 [Unit]
-Description=LangGraph Orchestrator Service
+Description=Hermes LangGraph Orchestrator
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/orchestrator
+WorkingDirectory=/
 Environment="PYTHONPATH=/orchestrator"
-EnvironmentFile=/config/orchestrator.env
-ExecStart=/root/venv/bin/python -m uvicorn orchestrator.api:app --host 127.0.0.1 --port 18793 --log-level info
+ExecStart=/root/venv/bin/python -m uvicorn orchestrator.orchestrator.api:app --host 127.0.0.1 --port 18793 --log-level info
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/orchestrator/stdout.log

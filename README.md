@@ -1,64 +1,55 @@
-# LangGraph Orchestrator MVP
+# Hermes LangGraph Orchestrator
 
-**Hermes as primary agent + LangGraph as orchestration engine. No OpenClaw.**
-
----
-
-## What This Is
-
-A lightweight orchestration layer that:
-1. Receives tasks from Hermes gateway
-2. Routes simple tasks to Hermes direct path
-3. Routes complex tasks through a LangGraph workflow (planner → worker → critic → synthesize → send_result)
-4. Uses Hermes as the worker for all deep execution (terminal, Docker, SSH, research, coding)
+**Hermes as primary agent platform + LangGraph as orchestration engine. No OpenClaw.**
 
 ---
 
 ## Architecture
 
 ```
-Hermes Gateway (18792) ────── simple ──────► Hermes direct answer
-              │
-              └─── complex ──► LangGraph Orchestrator (18793)
-                                    │
-                              planner → worker (Hermes) → critic → synthesize → send_result
+Telegram ──▶ Hermes Gateway (18792)
+                    │
+            simple? ──Yes──▶ Hermes direct answer
+                    │
+                   No
+                    ▼
+          LangGraph Orchestrator (18793)
+                    │
+          ingest → classify → planner
+                    │              │
+                  END         worker (Hermes)
+                              critic → synthesize
+                              send_result → Hermes → Telegram
 ```
 
-See [docs/architecture.md](docs/architecture.md) for full details.
+**Ports:**
+- 18792 — Hermes Gateway (messaging)
+- 18793 — LangGraph Orchestrator (workflow engine + dashboard)
 
 ---
 
 ## Quick Start
 
-### 1. Install dependencies
-
 ```bash
+# Install dependencies
 /root/venv/bin/pip install -r /orchestrator/requirements.txt
-```
 
-### 2. Configure
-
-```bash
-cp /orchestrator/.env.example /config/orchestrator.env
-# Edit /config/orchestrator.env
-```
-
-### 3. Start
-
-```bash
-# Option A: systemd (recommended)
-/root/venv/bin/python -m uvicorn orchestrator.api:app --host 127.0.0.1 --port 18793 &
-
-# Option B: via script
+# Start orchestrator
 bash /scripts/start_orchestrator.sh
-```
 
-### 4. Verify
-
-```bash
+# Verify
 curl http://127.0.0.1:18793/health
-curl http://127.0.0.1:18793/health/graph
 ```
+
+---
+
+## Dashboard
+
+Open in browser: `http://<vps-ip>:18793/`
+
+Shows: node status, API endpoints, quick actions, test curl commands.
+
+Auto-refreshes every 10 seconds.
 
 ---
 
@@ -66,29 +57,30 @@ curl http://127.0.0.1:18793/health/graph
 
 ### POST /v1/task
 ```json
-{
-  "message": "deploy quizworld to production",
-  "session_id": "abc-123",
-  "source": "telegram"
-}
+{"message": "deploy quizworld to production", "source": "telegram"}
 ```
 
 ### GET /health
-Returns `{status: "ok", workflow: "loaded|FAILED"}`
+Returns `{status: "ok", workflow: "loaded"}`
 
 ### GET /health/graph
 Returns `{nodes: ["ingest", "classify", ...]}`
 
 ---
 
-## Directories
+## LangGraph Studio UI
 
-| Path | Purpose |
-|------|---------|
-| `/orchestrator` | Python package (workflow, nodes, api) |
-| `/config` | YAML config, env files |
-| `/scripts` | Startup scripts |
-| `/docs` | Architecture & runbook docs |
+For visual graph debugging, use LangGraph CLI:
+
+```bash
+cd /orchestrator
+PYTHONPATH=/orchestrator langgraph dev \
+  --config /orchestrator/langgraph.json \
+  --port 18794 \
+  --no-browser
+```
+
+Then open: `https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:18794`
 
 ---
 
@@ -96,23 +88,29 @@ Returns `{nodes: ["ingest", "classify", ...]}`
 
 | Component | Status |
 |-----------|--------|
-| LangGraph workflow (6 nodes) | ✅ Built |
-| FastAPI server on 18793 | ✅ Built |
-| Hermes bridge integration (mock fallback) | ✅ Built |
-| systemd unit | ✅ Built |
-| Architecture docs | ✅ Built |
-| End-to-end test | 🔲 Not verified |
-| systemd install + verify | 🔲 Not verified |
+| LangGraph workflow (7 nodes) | ✅ |
+| FastAPI dashboard on 18793 | ✅ |
+| Hermes bridge integration (mock fallback) | ✅ |
+| systemd unit | ✅ |
+| Committed to GitHub | ✅ |
+| Real Hermes endpoint integration | 🔲 fix endpoints |
+| Docker build | 🔲 |
 
 ---
 
-## Environment Variables
+## Files
 
-See [`.env.example`](orchestrator/.env.example) for full list.
-
-Key variables:
-- `HERMES_BRIDGE_URL` — Hermes gateway address (default: `http://127.0.0.1:18792`)
-- `ORCHESTRATOR_PORT` — orchestrator port (default: `18793`)
-- `OPENAI_API_KEY` — for LLM-powered classifier/planner (optional)
-- `WORKER_TIMEOUT_SECONDS` — Hermes worker timeout (default: 120)
-- `MAX_RETRIES` — critic retry limit (default: 2)
+```
+/orchestrator/
+  orchestrator/           # Python package
+    __init__.py
+    workflow.py           # LangGraph graph
+    state.py              # AgentState schema
+    nodes.py              # 6 node implementations
+    api.py                # FastAPI server
+  requirements.txt
+  langgraph.json          # LangGraph Studio config
+  docker-compose.yml
+  .env.example
+  systemd/orchestrator.service
+```
