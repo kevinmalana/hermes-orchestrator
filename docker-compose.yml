@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:18793:18793"
+    environment:
+      - HERMES_BRIDGE_URL=http://host.docker.internal:18792
+      - ORCHESTRATOR_PORT=18793
+      - LOG_LEVEL=INFO
+    volumes:
+      - /var/log/orchestrator:/var/log/orchestrator
+    restart: unless-stopped
+    network_mode: bridge
+
+  # Optional: Redis for state persistence (future)
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "127.0.0.1:6379:6379"
